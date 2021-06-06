@@ -13,16 +13,21 @@
 #endif
 #include "timer.h"
 #include "scheduler.h"
-char patterns[8] = {0x80,0x40, 0x20, 0x10, 0x08, 0x04, 0x02,0x01};
+
+
 //char patterns[15] = {0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80};
-//char rows[4] = {0x1B, 0x1B, 0x1B, 0x1B};
+char rows[4] = {0x1B, 0x1B, 0x1B, 0x1B};
 unsigned char p1_movement[3] = {0x03, 0x11, 0x18};
 unsigned char p1_index = 1;
 unsigned char p1_col = 0x80;
 
-unsigned char mid_row[8] = {0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B};
-unsigned char mid_bounce[8] = {0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80};
-unsigned char rows[8] = {0x1E, 0x1D, 0x1B, 0x17, 0x0F, 0x17, 0x1B, 0x1D};
+//unsigned char mid_row[8] = {0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B};
+//unsigned char mid_bounce[8] = {0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80};
+
+unsigned char ball_row[8] = {0x80,0x40, 0x20, 0x10, 0x08, 0x04, 0x02,0x01};
+unsigned char ball_col[8] = {0x1E, 0x1D, 0x1B, 0x17, 0x0F, 0x17, 0x1B, 0x1D};
+unsigned char ballrow_index = 3;
+unsigned char ballcol_index = 3;
 
 unsigned char p2_movement[3] = {0x03, 0x11, 0x18};
 unsigned char p2_index = 1;
@@ -32,6 +37,10 @@ unsigned char p = 0;
 unsigned char r = 0;
 unsigned char i = 0;
 
+unsigned char p1_score = 0;
+unsigned char p2_score = 0;
+unsigned char p1 = 0;
+unsigned char p2 = 0;
 
 //--------------------------------------
 // LED Matrix Demo SynchSM
@@ -232,10 +241,8 @@ int led_tick(int led) {
 			led = ballupdate;
 			break;
 		case ballupdate:
-			PORTC = patterns[i];
-			PORTD = rows[i];
-			PORTC = mid_
-
+			PORTD = ball_col[ballcol_index];
+			PORTC = ball_row[ballrow_index];
 			led = p1update;
 			break;
 		case waitmove:
@@ -250,39 +257,141 @@ int led_tick(int led) {
 	return led;
 }
 
-enum ball_states {begin,move} state1;
-unsigned char p1_score = 0;
-unsigned char p2_score = 0;
+enum ball_states {begin, b_start, b_wait, move, stop} state1;
+char touch = -1;
+char wall = -1;
+char startcount = 0;
+char ballcount = 0;
 
 int ball_tick(int state1) {
 	switch(state1) {
 		case begin:
-			state1 = move;
+			state1 = b_start;
+			break;
+		case b_start:
+			if((~PINA & 0x01) == 0x01) {
+				state1 = b_wait;
+			}
+			else {
+				state1 = begin;
+			}
+			break;
+		case b_wait:
+			if(startcount != 10000) {
+				state1 = b_wait;
+			}
+			else if(startcount == 10000) {
+				startcount = 0;
+				state1 = move;
+			}
 			break;
 		case move:
-			state1 = move;
+			startcount = 0;
+			if(ballcol_index == 0) {
+				p2 = 1;
+				state1 = b_start;
+			}
+			else if(ballcol_index == 7) {
+				p1 = 1;
+				state1 = b_start;
+			}
+			else {
+				state1 = stop;
+			}
+			break;
+		case stop:
+			if(ballcount != 4000) {
+				state1 = stop;
+			}
+			else {
+				ballcount = 0;
+				if(p1) {
+					state1 = b_start;
+				}
+				else if(p2) {
+					state1 = b_start;
+				}
+				else {
+					state1 = move;
+				}
+			}
+			break;
 		default:
-			state1 = move;
+			state1 = begin;
 			break;
 	}
 	switch(state1) {
 		case begin:
-			if((~PINA & 0x01) == 0x01) {
-				state1 = begin;
+			p1 = 0;
+			p2 = 0;
+			break;
+		case b_start:
+			if(!p1 && !p2) {
+				touch = -1;
+				wall = 0;
+				ballrow_index = 4;
+				ballcol_index = 4;
+				p1_index = 1;
+				p2_index = 1;
+				p1 = 0;
+				p2 = 0;
 			}
-			else {
-				state1 = move;
+			else if(p1) {
+				touch = 1;
+				wall = 0;
+				ballrow_index = 4;
+				ballcol_index = 2;
+				p1_index = 1;
+				p2_index = 1;
+				p1_score++;
 			}
+			else if(p2) {
+				touch = -1;
+				wall = 0;
+				ballrow_index = 4;
+				ballcol_index = 5;
+				p1_index = 1;
+				p2_index = 1;
+				p2_score++;
+			}
+			break;
+		case b_wait:
+			p1 = 0; 
+			p2 = 0;
+			startcount++;
+			break;
 		case move:
-			if(i < 15) {
-				p = patterns[i];
-				r = rows[i];
-				i++;
-				if(r = 0x
+			startcount = 0;
+			ballrow_index = ballrow_index + wall;
+			ballcol_index = ballcol_index + touch;
+			if(ballrow_index > 6 || ballrow_index < 1) {
+				wall *= -1;
 			}
-			else {
-				i = 0;
+			if(ballcol_index < 2) {
+				if(ballrow_index == 0) {
+					if(p1_index == 0) {
+						touch = 1;
+						wall = 1;
+					}
+				}
+				else if(ballrow_index == 1) {
+					if(p1_index == 0) {
+						touch = 1;
+						wall = 0;
+					}
+					else if(p1_index == 1) {
+						touch = 1;
+						wall = -1;
+					}
+
+					else {
+						p2 = 1;
+					}
+				}
 			}
+			break;
+		case stop:
+			ballcount++;
 			break;
 	}
 	return state1;
@@ -322,7 +431,7 @@ int main(void) {
 	
 	//task 4 ball
 	task4.state = start;
-	task4.period = 200;
+	task4.period = 100;
 	task4.elapsedTime = task4.period;
 	task4.TickFct = &ball_tick;
 	TimerSet(1);
